@@ -1,6 +1,6 @@
 import { desc, and, eq, isNull } from 'drizzle-orm';
 import { db } from './drizzle';
-import { activityLogs, teamMembers, teams, users } from './schema';
+import { activityLogs, jobs, teamMembers, teams, users } from './schema';
 import { cookies } from 'next/headers';
 import { verifyToken } from '@/lib/auth/session';
 
@@ -127,4 +127,32 @@ export async function getTeamForUser() {
   });
 
   return result?.team || null;
+}
+
+export async function getJobsForTeam() {
+  const team = await getTeamForUser();
+  if (!team) {
+    throw new Error('User not authenticated');
+  }
+
+  return await db
+    .select()
+    .from(jobs)
+    .where(eq(jobs.teamId, team.id))
+    .orderBy(desc(jobs.createdAt));
+}
+
+export async function getJobForTeam(jobId: number) {
+  const team = await getTeamForUser();
+  if (!team) {
+    return null;
+  }
+
+  const result = await db
+    .select()
+    .from(jobs)
+    .where(and(eq(jobs.id, jobId), eq(jobs.teamId, team.id)))
+    .limit(1);
+
+  return result.length > 0 ? result[0] : null;
 }
