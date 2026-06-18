@@ -68,10 +68,27 @@ export const invitations = pgTable('invitations', {
   status: varchar('status', { length: 20 }).notNull().default('pending'),
 });
 
+export const jobs = pgTable('jobs', {
+  id: serial('id').primaryKey(),
+  teamId: integer('team_id')
+    .notNull()
+    .references(() => teams.id),
+  jobNumber: varchar('job_number', { length: 255 }).notNull(),
+  customerName: varchar('customer_name', { length: 255 }),
+  partNumber: varchar('part_number', { length: 255 }),
+  partRevision: varchar('part_revision', { length: 255 }),
+  quantity: integer('quantity'),
+  dueDate: timestamp('due_date'),
+  status: varchar('status', { length: 50 }).notNull().default('open'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
 export const teamsRelations = relations(teams, ({ many }) => ({
   teamMembers: many(teamMembers),
   activityLogs: many(activityLogs),
   invitations: many(invitations),
+  jobs: many(jobs),
 }));
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -112,6 +129,13 @@ export const activityLogsRelations = relations(activityLogs, ({ one }) => ({
   }),
 }));
 
+export const jobsRelations = relations(jobs, ({ one }) => ({
+  team: one(teams, {
+    fields: [jobs.teamId],
+    references: [teams.id],
+  }),
+}));
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Team = typeof teams.$inferSelect;
@@ -122,6 +146,8 @@ export type ActivityLog = typeof activityLogs.$inferSelect;
 export type NewActivityLog = typeof activityLogs.$inferInsert;
 export type Invitation = typeof invitations.$inferSelect;
 export type NewInvitation = typeof invitations.$inferInsert;
+export type Job = typeof jobs.$inferSelect;
+export type NewJob = typeof jobs.$inferInsert;
 export type TeamDataWithMembers = Team & {
   teamMembers: (TeamMember & {
     user: Pick<User, 'id' | 'name' | 'email'>;
