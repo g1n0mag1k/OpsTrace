@@ -6,6 +6,7 @@ import { getJobForTeam, getInspectionRecordsForTeam, getJobOperationsForTeam } f
 import { ArrowLeft } from 'lucide-react';
 import { JobOperations } from './job-operations';
 import { JobInspectionRecords } from './job-inspection-records';
+import { DownloadTravelerPdfButton } from './download-traveler-pdf';
 
 function formatDate(date: Date | null) {
   if (!date) return '—';
@@ -42,9 +43,12 @@ export default async function JobDetailPage({
             Back to Jobs
           </Link>
         </Button>
-        <h1 className="text-lg lg:text-2xl font-medium text-gray-900">
-          {job.jobNumber}
-        </h1>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <h1 className="text-lg lg:text-2xl font-medium text-gray-900">
+            {job.jobNumber}
+          </h1>
+          <DownloadTravelerPdfButton jobId={jobId} jobNumber={job.jobNumber} />
+        </div>
       </div>
 
       <Card>
