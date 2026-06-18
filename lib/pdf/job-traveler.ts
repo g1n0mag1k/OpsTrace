@@ -214,6 +214,7 @@ export async function generateJobTravelerPdf(
     const doc = new PDFDocument({
       size: 'LETTER',
       margin: PAGE_MARGIN,
+      bufferPages: true,
       info: {
         Title: `${job.jobNumber} Job Traveler`,
         Author: 'OpsTrace',

@@ -18,6 +18,57 @@ function formatDateTime(date: Date | null) {
   return new Date(date).toLocaleString();
 }
 
+function OperationRow({
+  jobId,
+  operation
+}: {
+  jobId: number;
+  operation: JobOperation;
+}) {
+  const [completeState, completeAction, isCompletePending] = useActionState<
+    ActionState,
+    FormData
+  >(completeJobOperation, {});
+
+  return (
+    <li className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b pb-4 last:border-b-0 last:pb-0">
+      <div>
+        <p className="font-medium">
+          {operation.sequence}. {operation.description || '—'}
+        </p>
+        <p className="text-sm text-muted-foreground">
+          Machine: {operation.machine || '—'}
+        </p>
+        {operation.completedAt ? (
+          <p className="text-sm text-muted-foreground">
+            Completed by {operation.completedBy || '—'} on{' '}
+            {formatDateTime(operation.completedAt)}
+          </p>
+        ) : null}
+      </div>
+      {!operation.completedAt ? (
+        <div className="flex flex-col items-start gap-2">
+          <form action={completeAction}>
+            <input type="hidden" name="jobId" value={jobId} />
+            <input type="hidden" name="operationId" value={operation.id} />
+            <Button
+              type="submit"
+              variant="outline"
+              size="sm"
+              disabled={isCompletePending}
+            >
+              {isCompletePending ? 'Completing...' : 'Mark Complete'}
+            </Button>
+          </form>
+          {completeState?.error ? (
+            <p className="text-red-500 text-sm">{completeState.error}</p>
+          ) : null}
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
 export function JobOperations({
   jobId,
   operations
@@ -29,11 +80,6 @@ export function JobOperations({
     ActionState,
     FormData
   >(createJobOperation, {});
-
-  const [completeState, completeAction, isCompletePending] = useActionState<
-    ActionState,
-    FormData
-  >(completeJobOperation, {});
 
   return (
     <div className="space-y-8 mt-8">
@@ -47,48 +93,13 @@ export function JobOperations({
           ) : (
             <ul className="space-y-4">
               {operations.map((operation) => (
-                <li
+                <OperationRow
                   key={operation.id}
-                  className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b pb-4 last:border-b-0 last:pb-0"
-                >
-                  <div>
-                    <p className="font-medium">
-                      {operation.sequence}. {operation.description || '—'}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      Machine: {operation.machine || '—'}
-                    </p>
-                    {operation.completedAt ? (
-                      <p className="text-sm text-muted-foreground">
-                        Completed by {operation.completedBy || '—'} on{' '}
-                        {formatDateTime(operation.completedAt)}
-                      </p>
-                    ) : null}
-                  </div>
-                  {!operation.completedAt ? (
-                    <form action={completeAction}>
-                      <input type="hidden" name="jobId" value={jobId} />
-                      <input
-                        type="hidden"
-                        name="operationId"
-                        value={operation.id}
-                      />
-                      <Button
-                        type="submit"
-                        variant="outline"
-                        size="sm"
-                        disabled={isCompletePending}
-                      >
-                        {isCompletePending ? 'Completing...' : 'Mark Complete'}
-                      </Button>
-                    </form>
-                  ) : null}
-                </li>
+                  jobId={jobId}
+                  operation={operation}
+                />
               ))}
             </ul>
-          )}
-          {completeState?.error && (
-            <p className="text-red-500 mt-4">{completeState.error}</p>
           )}
         </CardContent>
       </Card>
