@@ -84,6 +84,19 @@ export const jobs = pgTable('jobs', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
+export const jobOperations = pgTable('job_operations', {
+  id: serial('id').primaryKey(),
+  jobId: integer('job_id')
+    .notNull()
+    .references(() => jobs.id),
+  sequence: integer('sequence').notNull(),
+  description: varchar('description', { length: 255 }),
+  machine: varchar('machine', { length: 255 }),
+  completedBy: varchar('completed_by', { length: 255 }),
+  completedAt: timestamp('completed_at'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
 export const teamsRelations = relations(teams, ({ many }) => ({
   teamMembers: many(teamMembers),
   activityLogs: many(activityLogs),
@@ -129,10 +142,18 @@ export const activityLogsRelations = relations(activityLogs, ({ one }) => ({
   }),
 }));
 
-export const jobsRelations = relations(jobs, ({ one }) => ({
+export const jobsRelations = relations(jobs, ({ one, many }) => ({
   team: one(teams, {
     fields: [jobs.teamId],
     references: [teams.id],
+  }),
+  operations: many(jobOperations),
+}));
+
+export const jobOperationsRelations = relations(jobOperations, ({ one }) => ({
+  job: one(jobs, {
+    fields: [jobOperations.jobId],
+    references: [jobs.id],
   }),
 }));
 
@@ -148,6 +169,8 @@ export type Invitation = typeof invitations.$inferSelect;
 export type NewInvitation = typeof invitations.$inferInsert;
 export type Job = typeof jobs.$inferSelect;
 export type NewJob = typeof jobs.$inferInsert;
+export type JobOperation = typeof jobOperations.$inferSelect;
+export type NewJobOperation = typeof jobOperations.$inferInsert;
 export type TeamDataWithMembers = Team & {
   teamMembers: (TeamMember & {
     user: Pick<User, 'id' | 'name' | 'email'>;

@@ -1,9 +1,15 @@
 'use server';
 
 import { z } from 'zod';
+import { and, eq } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
-import { jobs, type NewJob } from '@/lib/db/schema';
-import { getUserWithTeam } from '@/lib/db/queries';
+import {
+  jobOperations,
+  jobs,
+  type NewJob,
+  type NewJobOperation
+} from '@/lib/db/schema';
+import { getJobForTeam, getUserWithTeam } from '@/lib/db/queries';
 import { validatedActionWithUser } from '@/lib/auth/middleware';
 import { redirect } from 'next/navigation';
 
@@ -46,5 +52,88 @@ export const createJob = validatedActionWithUser(
     }
 
     redirect(`/dashboard/jobs/${createdJob.id}`);
+  }
+);
+
+const createJobOperationSchema = z.object({
+  jobId: z.coerce.number().int().positive(),
+  sequence: z.coerce.number().int().positive(),
+  description: z.string().min(1, 'Description is required').max(255),
+  machine: z.string().min(1, 'Machine is required').max(255)
+});
+
+export const createJobOperation = validatedActionWithUser(
+  createJobOperationSchema,
+  async (data) => {
+    const job = await getJobForTeam(data.jobId);
+
+    if (!job) {
+      return { error: 'Job not found' };
+    }
+
+    const newOperation: NewJobOperation = {
+      jobId: data.jobId,
+      sequence: data.sequence,
+      description: data.description,
+      machine: data.machine
+    };
+
+    const [createdOperation] = await db
+      .insert(jobOperations)
+      .values(newOperation)
+      .returning();
+
+    if (!createdOperation) {
+      return { error: 'Failed to create operation. Please try again.' };
+    }
+
+    redirect(`/dashboard/jobs/${data.jobId}`);
+  }
+);
+
+const completeJobOperationSchema = z.object({
+  jobId: z.coerce.number().int().positive(),
+  operationId: z.coerce.number().int().positive()
+});
+
+export const completeJobOperation = validatedActionWithUser(
+  completeJobOperationSchema,
+  async (data, _, user) => {
+    const job = await getJobForTeam(data.jobId);
+
+    if (!job) {
+      return { error: 'Job not found' };
+    }
+
+    const result = await db
+      .select()
+      .from(jobOperations)
+      .where(
+        and(
+          eq(jobOperations.id, data.operationId),
+          eq(jobOperations.jobId, data.jobId)
+        )
+      )
+      .limit(1);
+
+    const operation = result[0];
+
+    if (!operation) {
+      return { error: 'Operation not found' };
+    }
+
+    if (operation.completedAt) {
+      return { error: 'Operation is already completed' };
+    }
+
+    await db
+      .update(jobOperations)
+      .set({
+        completedBy: user.name || user.email,
+        completedAt: new Date()
+      })
+      .where(eq(jobOperations.id, data.operationId));
+
+    redirect(`/dashboard/jobs/${data.jobId}`);
   }
 );

@@ -1,6 +1,13 @@
-import { desc, and, eq, isNull } from 'drizzle-orm';
+import { asc, desc, and, eq, isNull } from 'drizzle-orm';
 import { db } from './drizzle';
-import { activityLogs, jobs, teamMembers, teams, users } from './schema';
+import {
+  activityLogs,
+  jobOperations,
+  jobs,
+  teamMembers,
+  teams,
+  users
+} from './schema';
 import { cookies } from 'next/headers';
 import { verifyToken } from '@/lib/auth/session';
 
@@ -155,4 +162,17 @@ export async function getJobForTeam(jobId: number) {
     .limit(1);
 
   return result.length > 0 ? result[0] : null;
+}
+
+export async function getJobOperationsForTeam(jobId: number) {
+  const job = await getJobForTeam(jobId);
+  if (!job) {
+    return null;
+  }
+
+  return await db
+    .select()
+    .from(jobOperations)
+    .where(eq(jobOperations.jobId, jobId))
+    .orderBy(asc(jobOperations.sequence));
 }
