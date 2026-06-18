@@ -2,6 +2,7 @@ import { asc, desc, and, eq, isNull } from 'drizzle-orm';
 import { db } from './drizzle';
 import {
   activityLogs,
+  inspectionRecords,
   jobOperations,
   jobs,
   teamMembers,
@@ -175,4 +176,17 @@ export async function getJobOperationsForTeam(jobId: number) {
     .from(jobOperations)
     .where(eq(jobOperations.jobId, jobId))
     .orderBy(asc(jobOperations.sequence));
+}
+
+export async function getInspectionRecordsForTeam(jobId: number) {
+  const job = await getJobForTeam(jobId);
+  if (!job) {
+    return null;
+  }
+
+  return await db
+    .select()
+    .from(inspectionRecords)
+    .where(eq(inspectionRecords.jobId, jobId))
+    .orderBy(desc(inspectionRecords.inspectedAt));
 }

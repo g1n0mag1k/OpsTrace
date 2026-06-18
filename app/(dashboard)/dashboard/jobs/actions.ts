@@ -4,8 +4,10 @@ import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import {
+  inspectionRecords,
   jobOperations,
   jobs,
+  type NewInspectionRecord,
   type NewJob,
   type NewJobOperation
 } from '@/lib/db/schema';
@@ -133,6 +135,74 @@ export const completeJobOperation = validatedActionWithUser(
         completedAt: new Date()
       })
       .where(eq(jobOperations.id, data.operationId));
+
+    redirect(`/dashboard/jobs/${data.jobId}`);
+  }
+);
+
+const createInspectionRecordSchema = z.object({
+  jobId: z.coerce.number().int().positive(),
+  operationId: z
+    .union([z.literal(''), z.coerce.number().int().positive()])
+    .optional(),
+  dimension: z.string().min(1, 'Dimension is required').max(255),
+  nominalSpec: z.string().min(1, 'Nominal spec is required').max(255),
+  actualValue: z.string().min(1, 'Actual value is required').max(255),
+  result: z.enum(['pass', 'fail']),
+  inspector: z.string().min(1, 'Inspector is required').max(255),
+  inspectedAt: z.string().min(1, 'Inspected at is required')
+});
+
+export const createInspectionRecord = validatedActionWithUser(
+  createInspectionRecordSchema,
+  async (data) => {
+    const job = await getJobForTeam(data.jobId);
+
+    if (!job) {
+      return { error: 'Job not found' };
+    }
+
+    const operationId =
+      data.operationId === '' || data.operationId === undefined
+        ? null
+        : data.operationId;
+
+    if (operationId) {
+      const result = await db
+        .select()
+        .from(jobOperations)
+        .where(
+          and(
+            eq(jobOperations.id, operationId),
+            eq(jobOperations.jobId, data.jobId)
+          )
+        )
+        .limit(1);
+
+      if (!result[0]) {
+        return { error: 'Operation not found' };
+      }
+    }
+
+    const newRecord: NewInspectionRecord = {
+      jobId: data.jobId,
+      operationId,
+      dimension: data.dimension,
+      nominalSpec: data.nominalSpec,
+      actualValue: data.actualValue,
+      result: data.result,
+      inspector: data.inspector,
+      inspectedAt: new Date(data.inspectedAt)
+    };
+
+    const [createdRecord] = await db
+      .insert(inspectionRecords)
+      .values(newRecord)
+      .returning();
+
+    if (!createdRecord) {
+      return { error: 'Failed to create inspection record. Please try again.' };
+    }
 
     redirect(`/dashboard/jobs/${data.jobId}`);
   }

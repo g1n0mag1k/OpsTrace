@@ -2,9 +2,10 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { getJobForTeam, getJobOperationsForTeam } from '@/lib/db/queries';
+import { getJobForTeam, getInspectionRecordsForTeam, getJobOperationsForTeam } from '@/lib/db/queries';
 import { ArrowLeft } from 'lucide-react';
 import { JobOperations } from './job-operations';
+import { JobInspectionRecords } from './job-inspection-records';
 
 function formatDate(date: Date | null) {
   if (!date) return '—';
@@ -30,6 +31,7 @@ export default async function JobDetailPage({
   }
 
   const operations = (await getJobOperationsForTeam(jobId)) ?? [];
+  const inspectionRecords = (await getInspectionRecordsForTeam(jobId)) ?? [];
 
   return (
     <section className="flex-1 p-4 lg:p-8">
@@ -88,6 +90,12 @@ export default async function JobDetailPage({
       </Card>
 
       <JobOperations jobId={jobId} operations={operations} />
+
+      <JobInspectionRecords
+        jobId={jobId}
+        operations={operations}
+        records={inspectionRecords}
+      />
     </section>
   );
 }
