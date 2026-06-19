@@ -10,6 +10,10 @@ import {
   Mail,
   CheckCircle,
   ClipboardCheck,
+  Briefcase,
+  Wrench,
+  CircleCheck,
+  Download,
   type LucideIcon,
 } from 'lucide-react';
 import { ActivityType } from '@/lib/db/schema';
@@ -27,6 +31,10 @@ const iconMap: Record<ActivityType, LucideIcon> = {
   [ActivityType.INVITE_TEAM_MEMBER]: Mail,
   [ActivityType.ACCEPT_INVITATION]: CheckCircle,
   [ActivityType.CREATE_INSPECTION_RECORD]: ClipboardCheck,
+  [ActivityType.CREATE_JOB]: Briefcase,
+  [ActivityType.CREATE_OPERATION]: Wrench,
+  [ActivityType.COMPLETE_OPERATION]: CircleCheck,
+  [ActivityType.EXPORT_PDF]: Download,
 };
 
 function getRelativeTime(date: Date) {

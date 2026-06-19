@@ -52,6 +52,8 @@ export const activityLogs = pgTable('activity_logs', {
   userId: integer('user_id').references(() => users.id),
   action: text('action').notNull(),
   metadata: jsonb('metadata'),
+  targetType: varchar('target_type', { length: 50 }),
+  targetId: varchar('target_id', { length: 255 }),
   timestamp: timestamp('timestamp').notNull().defaultNow(),
   ipAddress: varchar('ip_address', { length: 45 }),
 });
@@ -233,4 +235,8 @@ export enum ActivityType {
   INVITE_TEAM_MEMBER = 'INVITE_TEAM_MEMBER',
   ACCEPT_INVITATION = 'ACCEPT_INVITATION',
   CREATE_INSPECTION_RECORD = 'CREATE_INSPECTION_RECORD',
+  CREATE_JOB = 'CREATE_JOB',
+  CREATE_OPERATION = 'CREATE_OPERATION',
+  COMPLETE_OPERATION = 'COMPLETE_OPERATION',
+  EXPORT_PDF = 'EXPORT_PDF',
 }

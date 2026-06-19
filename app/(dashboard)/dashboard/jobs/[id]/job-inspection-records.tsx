@@ -21,16 +21,6 @@ function formatDateTime(date: Date | null) {
   return new Date(date).toLocaleString();
 }
 
-function formatOperation(
-  operationId: number | null,
-  operations: JobOperation[]
-) {
-  if (!operationId) return '—';
-  const operation = operations.find((op) => op.id === operationId);
-  if (!operation) return '—';
-  return `${operation.sequence}. ${operation.description || '—'}`;
-}
-
 function getUserDisplayName(user: Pick<User, 'name' | 'email'> | undefined) {
   return user?.name || user?.email || 'your account';
 }

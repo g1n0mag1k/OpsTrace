@@ -55,6 +55,21 @@ export const createJob = validatedActionWithUser(
       return { error: 'Failed to create job. Please try again.' };
     }
 
+    await logActivity(
+      userWithTeam.teamId,
+      user.id,
+      ActivityType.CREATE_JOB,
+      {
+        jobNumber: data.jobNumber,
+        customer: data.customerName,
+        partNumber: data.partNumber,
+        revision: data.partRevision,
+        quantity: data.quantity,
+      },
+      'job',
+      String(createdJob.id)
+    );
+
     redirect(`/dashboard/jobs/${createdJob.id}`);
   }
 );
@@ -68,11 +83,17 @@ const createJobOperationSchema = z.object({
 
 export const createJobOperation = validatedActionWithUser(
   createJobOperationSchema,
-  async (data) => {
+  async (data, _, user) => {
     const job = await getJobForTeam(data.jobId);
 
     if (!job) {
       return { error: 'Job not found' };
+    }
+
+    const userWithTeam = await getUserWithTeam(user.id);
+
+    if (!userWithTeam?.teamId) {
+      return { error: 'User is not part of a team' };
     }
 
     const newOperation: NewJobOperation = {
@@ -90,6 +111,20 @@ export const createJobOperation = validatedActionWithUser(
     if (!createdOperation) {
       return { error: 'Failed to create operation. Please try again.' };
     }
+
+    await logActivity(
+      userWithTeam.teamId,
+      user.id,
+      ActivityType.CREATE_OPERATION,
+      {
+        jobId: data.jobId,
+        description: data.description,
+        sequence: data.sequence,
+        machine: data.machine,
+      },
+      'operation',
+      String(createdOperation.id)
+    );
 
     redirect(`/dashboard/jobs/${data.jobId}`);
   }
@@ -130,13 +165,34 @@ export const completeJobOperation = validatedActionWithUser(
       return { error: 'Operation is already completed' };
     }
 
+    const userWithTeam = await getUserWithTeam(user.id);
+
+    if (!userWithTeam?.teamId) {
+      return { error: 'User is not part of a team' };
+    }
+
+    const completedAt = new Date();
+
     await db
       .update(jobOperations)
       .set({
         completedBy: user.name || user.email,
-        completedAt: new Date()
+        completedAt,
       })
       .where(eq(jobOperations.id, data.operationId));
+
+    await logActivity(
+      userWithTeam.teamId,
+      user.id,
+      ActivityType.COMPLETE_OPERATION,
+      {
+        jobId: data.jobId,
+        completedBy: user.name || user.email,
+        completedAt: completedAt.toISOString(),
+      },
+      'operation',
+      String(data.operationId)
+    );
 
     redirect(`/dashboard/jobs/${data.jobId}`);
   }
@@ -229,7 +285,9 @@ export const createInspectionRecord = validatedActionWithUser(
         dimension: data.dimension,
         result: data.result,
         inspector,
-      }
+      },
+      'inspection',
+      String(createdRecord.id)
     );
 
     redirect(`/dashboard/jobs/${data.jobId}`);
