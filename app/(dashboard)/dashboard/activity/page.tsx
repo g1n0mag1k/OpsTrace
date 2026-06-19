@@ -9,6 +9,11 @@ import {
   UserMinus,
   Mail,
   CheckCircle,
+  ClipboardCheck,
+  Briefcase,
+  Wrench,
+  CircleCheck,
+  Download,
   type LucideIcon,
 } from 'lucide-react';
 import { ActivityType } from '@/lib/db/schema';
@@ -25,6 +30,11 @@ const iconMap: Record<ActivityType, LucideIcon> = {
   [ActivityType.REMOVE_TEAM_MEMBER]: UserMinus,
   [ActivityType.INVITE_TEAM_MEMBER]: Mail,
   [ActivityType.ACCEPT_INVITATION]: CheckCircle,
+  [ActivityType.CREATE_INSPECTION_RECORD]: ClipboardCheck,
+  [ActivityType.CREATE_JOB]: Briefcase,
+  [ActivityType.CREATE_OPERATION]: Wrench,
+  [ActivityType.COMPLETE_OPERATION]: CircleCheck,
+  [ActivityType.EXPORT_PDF]: Download,
 };
 
 function getRelativeTime(date: Date) {
@@ -63,6 +73,8 @@ function formatAction(action: ActivityType): string {
       return 'You invited a team member';
     case ActivityType.ACCEPT_INVITATION:
       return 'You accepted an invitation';
+    case ActivityType.CREATE_INSPECTION_RECORD:
+      return 'You signed off an inspection record';
     default:
       return 'Unknown action occurred';
   }

@@ -1,4 +1,4 @@
-import { asc, desc, and, eq, isNull } from 'drizzle-orm';
+import { asc, count, desc, and, eq, isNull } from 'drizzle-orm';
 import { db } from './drizzle';
 import {
   activityLogs,
@@ -189,4 +189,99 @@ export async function getInspectionRecordsForTeam(jobId: number) {
     .from(inspectionRecords)
     .where(eq(inspectionRecords.jobId, jobId))
     .orderBy(desc(inspectionRecords.inspectedAt));
+}
+
+const AUDIT_LOG_PAGE_SIZE = 25;
+
+export type JobAuditLogEntry = {
+  id: number;
+  action: string;
+  timestamp: Date;
+  metadata: unknown;
+  targetType: string | null;
+  targetId: string | null;
+  userName: string | null;
+  userEmail: string | null;
+};
+
+export async function getJobAuditLogForTeam(jobId: number) {
+  const team = await getTeamForUser();
+  if (!team) {
+    return null;
+  }
+
+  const jobIdStr = String(jobId);
+
+  const logs = await db
+    .select({
+      id: activityLogs.id,
+      action: activityLogs.action,
+      timestamp: activityLogs.timestamp,
+      metadata: activityLogs.metadata,
+      targetType: activityLogs.targetType,
+      targetId: activityLogs.targetId,
+      userName: users.name,
+      userEmail: users.email,
+    })
+    .from(activityLogs)
+    .leftJoin(users, eq(activityLogs.userId, users.id))
+    .where(eq(activityLogs.teamId, team.id))
+    .orderBy(desc(activityLogs.timestamp));
+
+  return logs.filter((log) => {
+    if (log.targetType === 'job' && log.targetId === jobIdStr) {
+      return true;
+    }
+    if (log.targetType === 'pdf' && log.targetId === jobIdStr) {
+      return true;
+    }
+    if (log.targetType === 'operation' || log.targetType === 'inspection') {
+      const metadata = log.metadata as Record<string, unknown> | null;
+      return metadata?.jobId === jobId || metadata?.jobId === jobIdStr;
+    }
+    return false;
+  });
+}
+
+export async function getTeamAuditLog(page: number = 1, actionFilter?: string) {
+  const team = await getTeamForUser();
+  if (!team) {
+    throw new Error('User not authenticated');
+  }
+
+  const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+  const whereClause = actionFilter
+    ? and(eq(activityLogs.teamId, team.id), eq(activityLogs.action, actionFilter))
+    : eq(activityLogs.teamId, team.id);
+
+  const [countResult] = await db
+    .select({ value: count() })
+    .from(activityLogs)
+    .where(whereClause);
+
+  const totalCount = countResult?.value ?? 0;
+
+  const logs = await db
+    .select({
+      id: activityLogs.id,
+      action: activityLogs.action,
+      timestamp: activityLogs.timestamp,
+      metadata: activityLogs.metadata,
+      targetType: activityLogs.targetType,
+      targetId: activityLogs.targetId,
+      userName: users.name,
+      userEmail: users.email,
+    })
+    .from(activityLogs)
+    .leftJoin(users, eq(activityLogs.userId, users.id))
+    .where(whereClause)
+    .orderBy(desc(activityLogs.timestamp))
+    .limit(AUDIT_LOG_PAGE_SIZE)
+    .offset((safePage - 1) * AUDIT_LOG_PAGE_SIZE);
+
+  return {
+    logs,
+    totalCount,
+    page: safePage,
+  };
 }
