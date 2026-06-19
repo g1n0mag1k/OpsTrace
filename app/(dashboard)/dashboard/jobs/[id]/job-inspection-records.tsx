@@ -1,17 +1,20 @@
 'use client';
 
 import { useActionState } from 'react';
+import useSWR from 'swr';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Loader2, PlusCircle } from 'lucide-react';
-import { InspectionRecord, JobOperation } from '@/lib/db/schema';
+import { Loader2, Lock, PlusCircle } from 'lucide-react';
+import { InspectionRecord, JobOperation, User } from '@/lib/db/schema';
 import { createInspectionRecord } from '../actions';
 
 type ActionState = {
   error?: string;
 };
+
+const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 function formatDateTime(date: Date | null) {
   if (!date) return '—';
@@ -28,6 +31,10 @@ function formatOperation(
   return `${operation.sequence}. ${operation.description || '—'}`;
 }
 
+function getUserDisplayName(user: Pick<User, 'name' | 'email'> | undefined) {
+  return user?.name || user?.email || 'your account';
+}
+
 export function JobInspectionRecords({
   jobId,
   operations,
@@ -37,6 +44,7 @@ export function JobInspectionRecords({
   operations: JobOperation[];
   records: InspectionRecord[];
 }) {
+  const { data: user } = useSWR<User>('/api/user', fetcher);
   const [createState, createAction, isCreatePending] = useActionState<
     ActionState,
     FormData
@@ -60,9 +68,9 @@ export function JobInspectionRecords({
                     <th className="pb-3 pr-4 font-medium">Nominal Spec</th>
                     <th className="pb-3 pr-4 font-medium">Actual Value</th>
                     <th className="pb-3 pr-4 font-medium">Result</th>
-                    <th className="pb-3 pr-4 font-medium">Operation</th>
                     <th className="pb-3 pr-4 font-medium">Inspector</th>
-                    <th className="pb-3 font-medium">Inspected At</th>
+                    <th className="pb-3 pr-4 font-medium">Inspected At</th>
+                    <th className="pb-3 font-medium">Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -76,12 +84,22 @@ export function JobInspectionRecords({
                       <td className="py-3 pr-4 capitalize">
                         {record.result || '—'}
                       </td>
-                      <td className="py-3 pr-4">
-                        {formatOperation(record.operationId, operations)}
-                      </td>
                       <td className="py-3 pr-4">{record.inspector || '—'}</td>
-                      <td className="py-3">
+                      <td className="py-3 pr-4">
                         {formatDateTime(record.inspectedAt)}
+                      </td>
+                      <td className="py-3">
+                        {record.lockedAt ? (
+                          <span
+                            className="inline-flex items-center gap-1 text-muted-foreground"
+                            title="This record is locked and cannot be edited"
+                          >
+                            <Lock className="h-4 w-4" aria-hidden="true" />
+                            <span className="sr-only">Locked</span>
+                          </span>
+                        ) : (
+                          '—'
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -99,6 +117,10 @@ export function JobInspectionRecords({
         <CardContent>
           <form action={createAction} className="space-y-4">
             <input type="hidden" name="jobId" value={jobId} />
+            <p className="text-sm text-muted-foreground">
+              Signed off by {getUserDisplayName(user)} · Timestamp set
+              automatically
+            </p>
             <div>
               <Label htmlFor="dimension" className="mb-2">
                 Dimension
@@ -164,28 +186,6 @@ export function JobInspectionRecords({
                 ))}
               </select>
             </div>
-            <div>
-              <Label htmlFor="inspector" className="mb-2">
-                Inspector
-              </Label>
-              <Input
-                id="inspector"
-                name="inspector"
-                placeholder="Enter inspector name"
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="inspectedAt" className="mb-2">
-                Inspected At
-              </Label>
-              <Input
-                id="inspectedAt"
-                name="inspectedAt"
-                type="datetime-local"
-                required
-              />
-            </div>
             {createState?.error && (
               <p className="text-red-500 text-sm">{createState.error}</p>
             )}
@@ -197,12 +197,12 @@ export function JobInspectionRecords({
               {isCreatePending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Adding...
+                  Signing off...
                 </>
               ) : (
                 <>
                   <PlusCircle className="mr-2 h-4 w-4" />
-                  Add Inspection Record
+                  Sign Off Inspection
                 </>
               )}
             </Button>

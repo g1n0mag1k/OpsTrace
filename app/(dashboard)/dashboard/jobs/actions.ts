@@ -7,12 +7,14 @@ import {
   inspectionRecords,
   jobOperations,
   jobs,
+  ActivityType,
   type NewInspectionRecord,
   type NewJob,
   type NewJobOperation
 } from '@/lib/db/schema';
 import { getJobForTeam, getUserWithTeam } from '@/lib/db/queries';
 import { validatedActionWithUser } from '@/lib/auth/middleware';
+import { logActivity } from '@/lib/activity/log';
 import { redirect } from 'next/navigation';
 
 const createJobSchema = z.object({
@@ -140,6 +142,10 @@ export const completeJobOperation = validatedActionWithUser(
   }
 );
 
+// COMPLIANCE: Inspection records are append-only. No update or delete
+// actions exist by design. This is required for AS9100/ISO 13485 audit
+// integrity. Do not add edit or delete functionality.
+
 const createInspectionRecordSchema = z.object({
   jobId: z.coerce.number().int().positive(),
   operationId: z
@@ -149,17 +155,21 @@ const createInspectionRecordSchema = z.object({
   nominalSpec: z.string().min(1, 'Nominal spec is required').max(255),
   actualValue: z.string().min(1, 'Actual value is required').max(255),
   result: z.enum(['pass', 'fail']),
-  inspector: z.string().min(1, 'Inspector is required').max(255),
-  inspectedAt: z.string().min(1, 'Inspected at is required')
 });
 
 export const createInspectionRecord = validatedActionWithUser(
   createInspectionRecordSchema,
-  async (data) => {
+  async (data, _, user) => {
     const job = await getJobForTeam(data.jobId);
 
     if (!job) {
       return { error: 'Job not found' };
+    }
+
+    const userWithTeam = await getUserWithTeam(user.id);
+
+    if (!userWithTeam?.teamId) {
+      return { error: 'User is not part of a team' };
     }
 
     const operationId =
@@ -184,15 +194,20 @@ export const createInspectionRecord = validatedActionWithUser(
       }
     }
 
+    const now = new Date();
+    const inspector = user.name || user.email;
+
     const newRecord: NewInspectionRecord = {
       jobId: data.jobId,
       operationId,
+      userId: user.id,
       dimension: data.dimension,
       nominalSpec: data.nominalSpec,
       actualValue: data.actualValue,
       result: data.result,
-      inspector: data.inspector,
-      inspectedAt: new Date(data.inspectedAt)
+      inspector,
+      inspectedAt: now,
+      lockedAt: now,
     };
 
     const [createdRecord] = await db
@@ -203,6 +218,19 @@ export const createInspectionRecord = validatedActionWithUser(
     if (!createdRecord) {
       return { error: 'Failed to create inspection record. Please try again.' };
     }
+
+    await logActivity(
+      userWithTeam.teamId,
+      user.id,
+      ActivityType.CREATE_INSPECTION_RECORD,
+      {
+        jobId: data.jobId,
+        operationId,
+        dimension: data.dimension,
+        result: data.result,
+        inspector,
+      }
+    );
 
     redirect(`/dashboard/jobs/${data.jobId}`);
   }

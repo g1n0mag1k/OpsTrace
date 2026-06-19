@@ -5,6 +5,7 @@ import {
   text,
   timestamp,
   integer,
+  jsonb,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
@@ -50,6 +51,7 @@ export const activityLogs = pgTable('activity_logs', {
     .references(() => teams.id),
   userId: integer('user_id').references(() => users.id),
   action: text('action').notNull(),
+  metadata: jsonb('metadata'),
   timestamp: timestamp('timestamp').notNull().defaultNow(),
   ipAddress: varchar('ip_address', { length: 45 }),
 });
@@ -103,12 +105,16 @@ export const inspectionRecords = pgTable('inspection_records', {
     .notNull()
     .references(() => jobs.id),
   operationId: integer('operation_id').references(() => jobOperations.id),
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id),
   dimension: varchar('dimension', { length: 255 }),
   nominalSpec: varchar('nominal_spec', { length: 255 }),
   actualValue: varchar('actual_value', { length: 255 }),
   result: varchar('result', { length: 20 }),
   inspector: varchar('inspector', { length: 255 }),
-  inspectedAt: timestamp('inspected_at'),
+  inspectedAt: timestamp('inspected_at').notNull(),
+  lockedAt: timestamp('locked_at').notNull(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
@@ -122,6 +128,7 @@ export const teamsRelations = relations(teams, ({ many }) => ({
 export const usersRelations = relations(users, ({ many }) => ({
   teamMembers: many(teamMembers),
   invitationsSent: many(invitations),
+  inspectionRecords: many(inspectionRecords),
 }));
 
 export const invitationsRelations = relations(invitations, ({ one }) => ({
@@ -185,6 +192,10 @@ export const inspectionRecordsRelations = relations(
       fields: [inspectionRecords.operationId],
       references: [jobOperations.id],
     }),
+    user: one(users, {
+      fields: [inspectionRecords.userId],
+      references: [users.id],
+    }),
   })
 );
 
@@ -221,4 +232,5 @@ export enum ActivityType {
   REMOVE_TEAM_MEMBER = 'REMOVE_TEAM_MEMBER',
   INVITE_TEAM_MEMBER = 'INVITE_TEAM_MEMBER',
   ACCEPT_INVITATION = 'ACCEPT_INVITATION',
+  CREATE_INSPECTION_RECORD = 'CREATE_INSPECTION_RECORD',
 }
