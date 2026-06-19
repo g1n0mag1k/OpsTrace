@@ -361,7 +361,7 @@ function drawFooters(
 
   for (let i = 0; i < pageCount; i++) {
     doc.switchToPage(i);
-    const footerY = doc.page.height - PAGE_MARGIN + 4;
+    const footerY = doc.page.height - PAGE_MARGIN - FOOTER_HEIGHT + 4;
 
     doc
       .fillColor(MUTED_COLOR)
