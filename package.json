@@ -10,6 +10,13 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@tailwindcss/oxide",
+      "esbuild",
+      "sharp"
+    ]
+  },
   "dependencies": {
     "@tailwindcss/postcss": "4.1.7",
     "@types/node": "^22.15.18",
