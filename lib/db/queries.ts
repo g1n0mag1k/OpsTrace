@@ -193,6 +193,56 @@ export async function getInspectionRecordsForTeam(jobId: number) {
 
 const AUDIT_LOG_PAGE_SIZE = 25;
 
+export type JobAuditLogEntry = {
+  id: number;
+  action: string;
+  timestamp: Date;
+  metadata: unknown;
+  targetType: string | null;
+  targetId: string | null;
+  userName: string | null;
+  userEmail: string | null;
+};
+
+export async function getJobAuditLogForTeam(jobId: number) {
+  const team = await getTeamForUser();
+  if (!team) {
+    return null;
+  }
+
+  const jobIdStr = String(jobId);
+
+  const logs = await db
+    .select({
+      id: activityLogs.id,
+      action: activityLogs.action,
+      timestamp: activityLogs.timestamp,
+      metadata: activityLogs.metadata,
+      targetType: activityLogs.targetType,
+      targetId: activityLogs.targetId,
+      userName: users.name,
+      userEmail: users.email,
+    })
+    .from(activityLogs)
+    .leftJoin(users, eq(activityLogs.userId, users.id))
+    .where(eq(activityLogs.teamId, team.id))
+    .orderBy(desc(activityLogs.timestamp));
+
+  return logs.filter((log) => {
+    if (log.targetType === 'job' && log.targetId === jobIdStr) {
+      return true;
+    }
+    if (log.targetType === 'pdf' && log.targetId === jobIdStr) {
+      return true;
+    }
+    if (log.targetType === 'operation' || log.targetType === 'inspection') {
+      const metadata = log.metadata as Record<string, unknown> | null;
+      return metadata?.jobId === jobId || metadata?.jobId === jobIdStr;
+    }
+    return false;
+  });
+}
+
 export async function getTeamAuditLog(page: number = 1, actionFilter?: string) {
   const team = await getTeamForUser();
   if (!team) {

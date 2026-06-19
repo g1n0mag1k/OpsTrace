@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import {
   getInspectionRecordsForTeam,
+  getJobAuditLogForTeam,
   getJobForTeam,
   getJobOperationsForTeam,
   getUser,
@@ -40,9 +41,20 @@ export async function GET(
     notFound();
   }
 
+  const generatedBy = user.name || user.email;
+  const generatedAt = new Date();
   const operations = (await getJobOperationsForTeam(jobId)) ?? [];
   const inspectionRecords = (await getInspectionRecordsForTeam(jobId)) ?? [];
-  const pdf = await generateJobTravelerPdf(job, operations, inspectionRecords);
+  const auditLogEntries = (await getJobAuditLogForTeam(jobId)) ?? [];
+
+  const pdf = await generateJobTravelerPdf({
+    job,
+    operations,
+    inspectionRecords,
+    auditLogEntries,
+    generatedBy,
+    generatedAt,
+  });
 
   await logActivity(
     userWithTeam.teamId,

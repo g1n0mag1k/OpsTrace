@@ -1,12 +1,24 @@
 import 'server-only';
 
+import { createHash } from 'crypto';
 import PDFDocument from 'pdfkit';
 import type { InspectionRecord, Job, JobOperation } from '@/lib/db/schema';
+import type { JobAuditLogEntry } from '@/lib/db/queries';
 
 const PAGE_MARGIN = 50;
+const FOOTER_HEIGHT = 36;
 const HEADER_BG = '#e5e7eb';
 const BORDER_COLOR = '#d1d5db';
 const MUTED_COLOR = '#6b7280';
+
+export type JobTravelerPdfInput = {
+  job: Job;
+  operations: JobOperation[];
+  inspectionRecords: InspectionRecord[];
+  auditLogEntries: JobAuditLogEntry[];
+  generatedBy: string;
+  generatedAt: Date;
+};
 
 function formatDate(date: Date | null) {
   if (!date) return '—';
@@ -25,12 +37,49 @@ function formatDateTime(date: Date | null) {
     day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
+    second: '2-digit',
   });
 }
 
 function dash(value: string | number | null | undefined) {
   if (value === null || value === undefined || value === '') return '—';
   return String(value);
+}
+
+function formatOperationLabel(
+  operationId: number | null,
+  operations: JobOperation[]
+) {
+  if (!operationId) return '—';
+  const operation = operations.find((op) => op.id === operationId);
+  if (!operation) return '—';
+  return `${operation.sequence}. ${operation.description || '—'}`;
+}
+
+function formatAuditAction(action: string): string {
+  return action
+    .toLowerCase()
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+function formatAuditDetails(metadata: unknown): string {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+    return '—';
+  }
+
+  const details = Object.entries(metadata as Record<string, unknown>)
+    .filter(([, value]) => value !== null && value !== undefined && value !== '')
+    .map(([key, value]) => `${key}: ${String(value)}`)
+    .join(' · ');
+
+  return details || '—';
+}
+
+function computeDocumentHash(data: Record<string, unknown>): string {
+  const serialized = JSON.stringify(data, Object.keys(data).sort());
+  return createHash('sha256').update(serialized).digest('hex');
 }
 
 type TableColumn = {
@@ -41,12 +90,17 @@ type TableColumn = {
 
 type TableRow = string[];
 
+type DrawTableOptions = {
+  emptyMessage?: string;
+  boldCells?: Array<Set<number>>;
+};
+
 function drawTable(
   doc: PDFKit.PDFDocument,
   startY: number,
   columns: TableColumn[],
   rows: TableRow[],
-  options?: { emptyMessage?: string }
+  options?: DrawTableOptions
 ): number {
   const tableWidth = doc.page.width - PAGE_MARGIN * 2;
   const rowPadding = 6;
@@ -77,7 +131,7 @@ function drawTable(
   };
 
   const ensureSpace = (height: number) => {
-    const bottom = doc.page.height - PAGE_MARGIN;
+    const bottom = doc.page.height - PAGE_MARGIN - FOOTER_HEIGHT;
     if (y + height > bottom) {
       doc.addPage();
       y = PAGE_MARGIN;
@@ -103,7 +157,8 @@ function drawTable(
     return y + minRowHeight + 16;
   }
 
-  for (const row of rows) {
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+    const row = rows[rowIndex];
     let rowHeight = minRowHeight;
 
     for (let i = 0; i < columns.length; i++) {
@@ -121,13 +176,17 @@ function drawTable(
     doc.rect(PAGE_MARGIN, y, tableWidth, rowHeight).stroke();
 
     let x = PAGE_MARGIN;
-    doc.fillColor('#111827').font('Helvetica').fontSize(9);
 
     for (let i = 0; i < columns.length; i++) {
-      doc.text(row[i] ?? '—', x + rowPadding, y + rowPadding, {
-        width: columns[i].width - rowPadding * 2,
-        align: columns[i].align ?? 'left',
-      });
+      const isBold = options?.boldCells?.[rowIndex]?.has(i) ?? false;
+      doc
+        .fillColor('#111827')
+        .font(isBold ? 'Helvetica-Bold' : 'Helvetica')
+        .fontSize(9)
+        .text(row[i] ?? '—', x + rowPadding, y + rowPadding, {
+          width: columns[i].width - rowPadding * 2,
+          align: columns[i].align ?? 'left',
+        });
       x += columns[i].width;
     }
 
@@ -139,7 +198,7 @@ function drawTable(
 }
 
 function drawSectionTitle(doc: PDFKit.PDFDocument, title: string, y: number) {
-  const bottom = doc.page.height - PAGE_MARGIN;
+  const bottom = doc.page.height - PAGE_MARGIN - FOOTER_HEIGHT;
   if (y + 30 > bottom) {
     doc.addPage();
     y = PAGE_MARGIN;
@@ -149,18 +208,45 @@ function drawSectionTitle(doc: PDFKit.PDFDocument, title: string, y: number) {
   return y + 22;
 }
 
-function drawJobHeader(doc: PDFKit.PDFDocument, job: Job, y: number) {
+function drawCoverPage(
+  doc: PDFKit.PDFDocument,
+  job: Job,
+  generatedBy: string,
+  generatedAt: Date
+) {
   const tableWidth = doc.page.width - PAGE_MARGIN * 2;
   const colWidth = tableWidth / 2;
   const rowHeight = 28;
+  let y = PAGE_MARGIN;
+
+  doc
+    .fillColor('#111827')
+    .font('Helvetica-Bold')
+    .fontSize(24)
+    .text('Job Traveler — Compliance Record', PAGE_MARGIN, y, { align: 'left' });
+
+  y += 40;
+
+  doc
+    .fillColor('#111827')
+    .font('Helvetica-Bold')
+    .fontSize(18)
+    .text(dash(job.jobNumber), PAGE_MARGIN, y);
+
+  y += 32;
 
   const fields: [string, string][] = [
-    ['Job Number', dash(job.jobNumber)],
     ['Customer', dash(job.customerName)],
     ['Part Number', dash(job.partNumber)],
     ['Revision', dash(job.partRevision)],
     ['Quantity', dash(job.quantity)],
     ['Due Date', formatDate(job.dueDate)],
+    ['Status', dash(job.status)],
+    ['Job Created', formatDate(job.createdAt)],
+    [
+      'Generated',
+      `${formatDateTime(generatedAt)} by ${generatedBy}`,
+    ],
   ];
 
   doc.save();
@@ -202,21 +288,139 @@ function drawJobHeader(doc: PDFKit.PDFDocument, job: Job, y: number) {
   }
 
   doc.restore();
-  return y + (fields.length / 2) * rowHeight + 20;
+
+  y += (fields.length / 2) * rowHeight + 28;
+
+  doc
+    .fillColor(MUTED_COLOR)
+    .font('Helvetica')
+    .fontSize(9)
+    .text(
+      'This document is a complete record of job execution, inspection results, and audit history. Generated by OpsTrace.',
+      PAGE_MARGIN,
+      y,
+      { width: tableWidth, align: 'left' }
+    );
+}
+
+function drawIntegrityHash(
+  doc: PDFKit.PDFDocument,
+  hash: string,
+  startY: number
+) {
+  const bottom = doc.page.height - PAGE_MARGIN - FOOTER_HEIGHT;
+  let y = startY;
+
+  if (y + 90 > bottom) {
+    doc.addPage();
+    y = PAGE_MARGIN;
+  }
+
+  y = drawSectionTitle(doc, 'Document Integrity', y);
+
+  const tableWidth = doc.page.width - PAGE_MARGIN * 2;
+
+  doc
+    .fillColor('#111827')
+    .font('Helvetica-Bold')
+    .fontSize(9)
+    .text('Document Integrity Hash (SHA-256):', PAGE_MARGIN, y);
+
+  y += 14;
+
+  doc
+    .fillColor('#111827')
+    .font('Courier')
+    .fontSize(8)
+    .text(hash, PAGE_MARGIN, y, { width: tableWidth });
+
+  y += 28;
+
+  doc
+    .fillColor(MUTED_COLOR)
+    .font('Helvetica')
+    .fontSize(8)
+    .text(
+      'This hash verifies the document has not been altered after generation. Contact the issuing organization for verification.',
+      PAGE_MARGIN,
+      y,
+      { width: tableWidth }
+    );
+
+  return y + 20;
+}
+
+function drawFooters(
+  doc: PDFKit.PDFDocument,
+  jobNumber: string,
+  generatedAt: Date,
+  generatedBy: string
+) {
+  const pageCount = doc.bufferedPageRange().count;
+  const generatedLabel = formatDateTime(generatedAt);
+
+  for (let i = 0; i < pageCount; i++) {
+    doc.switchToPage(i);
+    const footerY = doc.page.height - PAGE_MARGIN + 4;
+
+    doc
+      .fillColor(MUTED_COLOR)
+      .font('Helvetica')
+      .fontSize(8)
+      .text(
+        `OpsTrace Compliance Record — Job ${jobNumber} — Page ${i + 1} of ${pageCount}`,
+        PAGE_MARGIN,
+        footerY,
+        { align: 'center', width: doc.page.width - PAGE_MARGIN * 2 }
+      );
+
+    doc
+      .fillColor(MUTED_COLOR)
+      .font('Helvetica')
+      .fontSize(8)
+      .text(
+        `Generated ${generatedLabel} by ${generatedBy}`,
+        PAGE_MARGIN,
+        footerY + 12,
+        { align: 'center', width: doc.page.width - PAGE_MARGIN * 2 }
+      );
+  }
 }
 
 export async function generateJobTravelerPdf(
-  job: Job,
-  operations: JobOperation[],
-  inspectionRecords: InspectionRecord[]
+  input: JobTravelerPdfInput
 ): Promise<Buffer> {
+  const {
+    job,
+    operations,
+    inspectionRecords,
+    auditLogEntries,
+    generatedBy,
+    generatedAt,
+  } = input;
+
+  const auditHistory = [...auditLogEntries].sort(
+    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+  );
+
+  const hashPayload = {
+    job,
+    operations,
+    inspectionRecords,
+    auditLogEntries: auditHistory,
+    generatedBy,
+    generatedAt: generatedAt.toISOString(),
+  };
+
+  const documentHash = computeDocumentHash(hashPayload);
+
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({
       size: 'LETTER',
       margin: PAGE_MARGIN,
       bufferPages: true,
       info: {
-        Title: `${job.jobNumber} Job Traveler`,
+        Title: `${job.jobNumber} Compliance Record`,
         Author: 'OpsTrace',
       },
     });
@@ -226,28 +430,11 @@ export async function generateJobTravelerPdf(
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    const generatedAt = new Date().toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    });
+    drawCoverPage(doc, job, generatedBy, generatedAt);
 
-    doc
-      .fillColor('#111827')
-      .font('Helvetica-Bold')
-      .fontSize(20)
-      .text('Job Traveler', PAGE_MARGIN, PAGE_MARGIN, { align: 'left' });
+    doc.addPage();
 
-    doc
-      .fillColor(MUTED_COLOR)
-      .font('Helvetica')
-      .fontSize(9)
-      .text(`Generated ${generatedAt}`, PAGE_MARGIN, PAGE_MARGIN + 26, { align: 'left' });
-
-    let y = drawJobHeader(doc, job, PAGE_MARGIN + 52);
-
+    let y = PAGE_MARGIN;
     y = drawSectionTitle(doc, 'Operations', y);
 
     const tableWidth = doc.page.width - PAGE_MARGIN * 2;
@@ -263,8 +450,8 @@ export async function generateJobTravelerPdf(
       dash(operation.sequence),
       dash(operation.description),
       dash(operation.machine),
-      dash(operation.completedBy),
-      formatDateTime(operation.completedAt),
+      operation.completedAt ? dash(operation.completedBy) : 'PENDING',
+      operation.completedAt ? formatDateTime(operation.completedAt) : 'PENDING',
     ]);
 
     y = drawTable(doc, y, operationColumns, operationRows, {
@@ -274,39 +461,56 @@ export async function generateJobTravelerPdf(
     y = drawSectionTitle(doc, 'Inspection Records', y);
 
     const inspectionColumns: TableColumn[] = [
-      { header: 'Dimension', width: tableWidth * 0.2 },
-      { header: 'Spec', width: tableWidth * 0.18 },
-      { header: 'Actual', width: tableWidth * 0.18 },
-      { header: 'Result', width: tableWidth * 0.14 },
-      { header: 'Inspector', width: tableWidth * 0.3 },
+      { header: 'Dimension', width: tableWidth * 0.14 },
+      { header: 'Spec', width: tableWidth * 0.12 },
+      { header: 'Actual', width: tableWidth * 0.12 },
+      { header: 'Result', width: tableWidth * 0.1 },
+      { header: 'Inspector', width: tableWidth * 0.16 },
+      { header: 'Date/Time', width: tableWidth * 0.18 },
+      { header: 'Operation', width: tableWidth * 0.18 },
     ];
 
     const inspectionRows: TableRow[] = inspectionRecords.map((record) => [
       dash(record.dimension),
       dash(record.nominalSpec),
       dash(record.actualValue),
-      dash(record.result),
+      record.result?.toLowerCase() === 'fail' ? 'FAIL' : dash(record.result),
       dash(record.inspector),
+      formatDateTime(record.inspectedAt),
+      formatOperationLabel(record.operationId, operations),
     ]);
 
-    drawTable(doc, y, inspectionColumns, inspectionRows, {
+    const inspectionBoldCells = inspectionRecords.map((record) =>
+      record.result?.toLowerCase() === 'fail' ? new Set([3]) : new Set<number>()
+    );
+
+    y = drawTable(doc, y, inspectionColumns, inspectionRows, {
       emptyMessage: 'No inspection records.',
+      boldCells: inspectionBoldCells,
     });
 
-    const pageCount = doc.bufferedPageRange().count;
-    for (let i = 0; i < pageCount; i++) {
-      doc.switchToPage(i);
-      doc
-        .fillColor(MUTED_COLOR)
-        .font('Helvetica')
-        .fontSize(8)
-        .text(
-          `Page ${i + 1} of ${pageCount}`,
-          PAGE_MARGIN,
-          doc.page.height - PAGE_MARGIN + 20,
-          { align: 'center', width: doc.page.width - PAGE_MARGIN * 2 }
-        );
-    }
+    y = drawSectionTitle(doc, 'Record History', y);
+
+    const auditColumns: TableColumn[] = [
+      { header: 'Date/Time', width: tableWidth * 0.22 },
+      { header: 'User', width: tableWidth * 0.2 },
+      { header: 'Action', width: tableWidth * 0.2 },
+      { header: 'Details', width: tableWidth * 0.38 },
+    ];
+
+    const auditRows: TableRow[] = auditHistory.map((entry) => [
+      formatDateTime(new Date(entry.timestamp)),
+      entry.userName || entry.userEmail || '—',
+      formatAuditAction(entry.action),
+      formatAuditDetails(entry.metadata),
+    ]);
+
+    y = drawTable(doc, y, auditColumns, auditRows, {
+      emptyMessage: 'No audit history recorded.',
+    });
+
+    drawIntegrityHash(doc, documentHash, y);
+    drawFooters(doc, job.jobNumber, generatedAt, generatedBy);
 
     doc.end();
   });
